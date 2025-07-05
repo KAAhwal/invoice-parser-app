@@ -1,0 +1,4 @@
+
+poppler-utils
+tesseract-ocr
+tesseract-ocr-ara    # if you need Arabic OCR
