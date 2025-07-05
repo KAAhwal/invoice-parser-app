@@ -1,5 +1,6 @@
+
 streamlit
 pdfplumber
 pytesseract
-pandas
 pdf2image
+openai

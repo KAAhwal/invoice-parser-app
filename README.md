@@ -1,11 +1,30 @@
-# Vendor Invoice Parser Web App
 
-This is a Streamlit-based app to extract data from vendor-specific PDF invoices and export it to CSV.
+# Vendor Invoice Parser App
 
-## Setup
-1. Upload a ZIP file with PDFs.
-2. Choose the vendor from dropdown.
-3. The output CSV is generated for download.
+This Streamlit app allows you to upload a ZIP of invoice PDFs from different vendors and parse them using their specific logic.
 
-## Deployment
-Push this project to GitHub and deploy via [Streamlit Cloud](https://streamlit.io/cloud).
+## 🧾 Supported Vendors
+
+- Flint Hills
+- Boyett
+- Dale
+- Marathon
+- BB Energy
+
+## ⚙️ How to Use
+
+1. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Launch the app:
+
+```bash
+streamlit run app.py
+```
+
+3. Select a vendor, upload a ZIP of PDF invoices, and download the extracted CSV.
+
+Each vendor has its own parser defined in a separate `.py` file.
