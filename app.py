@@ -52,9 +52,14 @@ if uploaded_zip:
         successful_pdfs = []
         failed_pdfs     = []
 
-        for fname in os.listdir(tmpdir):
-            if not fname.lower().endswith(".pdf"):
-                continue
+        # Gather all PDF filenames in the folder
+        pdf_files = [
+            fname
+            for fname in os.listdir(tmpdir)
+            if fname.lower().endswith(".pdf")
+        ]
+
+        for fname in pdf_files:
             pdf_path = os.path.join(tmpdir, fname)
             try:
                 with open(pdf_path, "rb") as f:
@@ -64,26 +69,26 @@ if uploaded_zip:
                     row["source_file"] = fname
                 all_rows.extend(rows)
                 successful_pdfs.append(fname)
-            except Exception as e:
+            except Exception:
                 failed_pdfs.append(fname)
 
-        # 6. Show upload vs parse summary
-        total_pdfs   = len(successful_pdfs) + len(failed_pdfs)
-        parsed_count = len(successful_pdfs)
-        failed_count = len(failed_pdfs)
+        # 6. Show upload vs parse summary, counting unique filenames
+        total_unique  = len(set(pdf_files))
+        parsed_unique = len(set(successful_pdfs))
+        failed_unique = len(set(failed_pdfs))
 
         st.markdown(
-            f"**Uploaded:** {total_pdfs}   "
-            f"**Parsed:** {parsed_count}   "
-            f"**Failed:** {failed_count}"
+            f"**Uploaded:** {total_unique}   "
+            f"**Parsed:** {parsed_unique}   "
+            f"**Failed:** {failed_unique}"
         )
 
         if failed_pdfs:
             st.error("The following files failed to parse:")
-            for fn in failed_pdfs:
+            for fn in sorted(set(failed_pdfs)):
                 st.write(f"• {fn}")
 
-        # 7. Display results
+        # 7. Display parsed rows and allow CSV download
         if all_rows:
             df = pd.DataFrame(all_rows)
             st.success(f"Parsed {len(df)} rows total.")
