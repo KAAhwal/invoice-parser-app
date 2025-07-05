@@ -7,7 +7,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
 # Title
-st.title("Vendor Invoice Parser with Caching & Parallelism")
+st.title("BRZ Vendor Invoice Parser")
 
 # Vendor parser map (vendor name → module name without .py)
 VENDOR_PARSERS = {
