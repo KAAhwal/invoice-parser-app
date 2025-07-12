@@ -1,38 +1,24 @@
-import re
-from io import BytesIO
-from decimal import Decimal
-
 import pdfplumber
-import pytesseract
+import re
+from decimal import Decimal
+from io import BytesIO
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+VENDOR_NAME = "Flint Hills Resources LP"
 TOLERANCE = Decimal("0.01")
 
-INV_NO_RX    = re.compile(r"Invoice\s*(?:No|Number)\s*[:\-]?\s*(\S+)", re.IGNORECASE)
-INV_DT_RX    = re.compile(r"Invoice\s*Date\s*[:\-]?\s*(\d{1,2}/\d{1,2}/\d{2,4})", re.IGNORECASE)
-TOTAL_RX     = re.compile(r"Invoice\s*Total\s*[:\-]?\s*\$?([\d,]+\.\d{1,2})", re.IGNORECASE)
+INV_NO_RX = re.compile(r"Invoice\s*(?:No|Number)\s*[:\-]?\s*(\S+)", re.IGNORECASE)
+INV_DT_RX = re.compile(r"Invoice\s*Date\s*[:\-]?\s*(\d{1,2}/\d{1,2}/\d{2,4})", re.IGNORECASE)
+TOTAL_RX = re.compile(r"Invoice\s*Total\s*[:\-]?\s*\$?([\d,]+\.\d{1,2})", re.IGNORECASE)
 TOTAL_ALT_RX = re.compile(r"(?:Total\s*Invoice|Amount\s*Due)\s*[:\$]?\s*([\d,]+\.\d{1,2})", re.IGNORECASE)
-
 LINE_RX = re.compile(r"^(.+?)\s+(\(?-?\d{1,3}(?:,\d{3})*\.\d{1,2}\)?-?)$")
 
 BLOCK_EXCLUDE_PATTERNS = [
-    r"TICKET\s+DATE\s+TIME",
-    r"FLINT\s+HILLS\s+RESOURCES",
-    r"EPA\s*#",
-    r"INVOICE\s+NO\b",
-    r"PAGE\s+NO\b",
-    r"INVOICE\s+DT\b",
-    r"DUE\s+DT\b",
-    r"^TO:",
-    r"PLEASE\s+REFERENCE\s+NOTE",
-    r"Payment\s+Terms:",
-    r"Before\s+Discount",
-    r"After\s+Discount",
-    r"Total\s+Invoice",
-    r"Invoice\s+Total",
+    r"TICKET\s+DATE\s+TIME", r"FLINT\s+HILLS\s+RESOURCES", r"EPA\s*#", r"INVOICE\s+NO\b",
+    r"PAGE\s+NO\b", r"INVOICE\s+DT\b", r"DUE\s+DT\b", r"^TO:", r"PLEASE\s+REFERENCE\s+NOTE",
+    r"Payment\s+Terms:", r"Before\s+Discount", r"After\s+Discount",
+    r"Total\s+Invoice", r"Invoice\s+Total"
 ]
 BLOCK_EXCLUDE_REGEX = [re.compile(p, re.IGNORECASE) for p in BLOCK_EXCLUDE_PATTERNS]
-# ───────────────────────────────────────────────────────────────────────────────
 
 
 def normalize_amount(txt: str) -> Decimal:
@@ -44,17 +30,11 @@ def normalize_amount(txt: str) -> Decimal:
     return Decimal(t)
 
 
-def ocr_page_lines(page) -> list[str]:
-    img = page.to_image(resolution=300).original
-    txt = pytesseract.image_to_string(img)
-    return [ln.strip() for ln in txt.splitlines() if ln.strip()]
-
-
-def extract_header(lines: list[str]) -> tuple[str, str, Decimal, list[str]]:
+def extract_header(lines):
     inv_no = ""
     inv_dt = ""
     total = None
-    issues: list[str] = []
+    issues = []
 
     for ln in lines:
         if not inv_no:
@@ -101,18 +81,16 @@ def extract_header(lines: list[str]) -> tuple[str, str, Decimal, list[str]]:
     return inv_no, inv_dt, total, issues
 
 
-def extract_line_items(lines: list[str]) -> tuple[list[tuple[str, Decimal, str]], list[str]]:
-    items: list[tuple[str, Decimal, str]] = []
-    file_issues: list[str] = []
+def extract_line_items(lines):
+    items = []
+    issues = []
 
     for ln in lines:
         if any(rx.search(ln) for rx in BLOCK_EXCLUDE_REGEX):
             continue
-
         m = LINE_RX.match(ln)
         if not m:
             continue
-
         desc = m.group(1).strip().rstrip(":,")
         amt_txt = m.group(2).strip()
         try:
@@ -122,74 +100,58 @@ def extract_line_items(lines: list[str]) -> tuple[list[tuple[str, Decimal, str]]
             items.append((desc, Decimal("0"), f"Could not parse amount '{amt_txt}'"))
 
     if not items:
-        file_issues.append("No line items found after filtering")
+        issues.append("No line items found after filtering")
 
-    return items, file_issues
+    return items, issues
 
 
-def parse(f) -> list[dict]:
-    """
-    f: a file‐like object containing PDF bytes.
-    Returns list of rows:
-      {
-        source_file, vendor_name, invoice_number, invoice_date,
-        total_amount, line_item_description, line_item_amount,
-        check_needed, parsing_issue
-      }
-    """
-    data = f.read()
-    rows: list[dict] = []
+def parse(f):
+    rows = []
+    file_issues = []
 
     try:
-        pdf = pdfplumber.open(BytesIO(data))
-    except Exception:
+        with pdfplumber.open(BytesIO(f.read())) as pdf:
+            all_lines = []
+            for page in pdf.pages:
+                txt = page.extract_text() or ""
+                page_lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+                all_lines.extend(page_lines)
+    except Exception as e:
         return []
-
-    all_lines: list[str] = []
-    for page in pdf.pages:
-        txt = page.extract_text() or ""
-        if txt.strip():
-            page_lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-        else:
-            page_lines = ocr_page_lines(page)
-        all_lines.extend(page_lines)
 
     if not all_lines:
-        pdf.close()
         return []
 
-    inv_no, inv_dt, total_amt, hdr_issues = extract_header(all_lines)
+    inv_no, inv_dt, total_amt, header_issues = extract_header(all_lines)
     items, item_issues = extract_line_items(all_lines)
 
     if not items:
-        pdf.close()
         return []
 
-    sum_amt = sum(amt for (_, amt, _) in items)
-    mismatch = ""
-    if abs(sum_amt - total_amt) > TOLERANCE:
-        mismatch = "Line-item sum does not match total"
-
-    check_flag = bool(mismatch)
+    sum_line_amt = sum(amt for _, amt, _ in items)
+    mismatch_message = ""
+    if abs(sum_line_amt - total_amt) > TOLERANCE:
+        mismatch_message = "Line_item sum does not match total"
+    check_flag = "TRUE" if mismatch_message else "FALSE"
 
     for desc, amt, line_issue in items:
-        issues = hdr_issues + item_issues
+        combined_issues = header_issues + item_issues
         if line_issue:
-            issues.append(line_issue)
-        if mismatch:
-            issues.append(mismatch)
+            combined_issues.append(line_issue)
+        if mismatch_message:
+            combined_issues.append(mismatch_message)
 
+        parsing_issue = "; ".join(combined_issues)
         rows.append({
-            "source_file":           getattr(f, "name", ""),
-            "vendor_name":           "Flint Hills Resources LP",
-            "invoice_number":        inv_no,
-            "invoice_date":          inv_dt,
-            "total_amount":          f"{total_amt:.2f}",
+            "source_file": f.name if hasattr(f, "name") else "",
+            "vendor_name": VENDOR_NAME,
+            "invoice_number": inv_no,
+            "invoice_date": inv_dt,
+            "total_amount": f"{total_amt:.2f}",
             "line_item_description": desc,
-            "line_item_amount":      f"{amt:.2f}",
-            "check_needed":          check_flag,
-            "parsing_issue":         "; ".join(issues)
+            "line_item_amount": f"{amt:.2f}",
+            "check_needed": check_flag,
+            "parsing_issue": parsing_issue
         })
 
-    pdf.close()
     return rows
